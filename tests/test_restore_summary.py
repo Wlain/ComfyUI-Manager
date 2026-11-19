@@ -179,8 +179,8 @@ def test_clone_that_is_enabled_is_left_to_the_install_of_the_version_that_the_sn
 
 @pytest.mark.parametrize('failure, lines, done', [
     ('the registry does not have it', [f'[  CHECKOUT ] fixture@{COMMIT}', '[  FAILED   ] fixture@1.0.0'], []),
-    ('its download fails', ['[  ENABLED  ] fixture', '[  FAILED   ] fixture@1.0.0'], ['disable fixture', 'enable fixture@nightly']),
-    ('its download fails after another version was enabled', ['[  ENABLED  ] fixture', '[  FAILED   ] fixture@1.0.0'], ['disable fixture', 'enable fixture@cnr', 'enable fixture@nightly']),
+    ('its download fails', [f'[  CHECKOUT ] fixture@{COMMIT}', '[  FAILED   ] fixture@1.0.0'], ['disable fixture', 'enable fixture@nightly']),
+    ('its download fails after another version was enabled', [f'[  CHECKOUT ] fixture@{COMMIT}', '[  FAILED   ] fixture@1.0.0'], ['disable fixture', 'enable fixture@cnr', 'enable fixture@nightly']),
 ], ids=['the registry does not have it', 'its download fails', 'its download fails after another version was enabled'])
 def test_clone_of_the_snapshot_is_restored_when_the_version_that_the_snapshot_names_cannot_be_installed(core, manager, summary, steps, monkeypatch, tmp_path, failure, lines, done):  # noqa: F811
     manager.repo_cnr_map[REPO_URL] = manager.cnr_map['fixture'] = {'id': 'fixture', 'repository': REPO_URL, 'publisher': {'name': 'owner'}}
@@ -195,7 +195,7 @@ def test_clone_of_the_snapshot_is_restored_when_the_version_that_the_snapshot_na
         steps.append('enable %s@%s' % (name, version))
         if version == 'cnr':
             manager.active_nodes[name] = ('2.0.0', manager.cnr_inactive_nodes[name].pop('2.0.0'))
-        return core.ManagedResult('enable')
+        return core.ManagedResult('enable').with_target(str(tmp_path / name))
 
     manager.unified_disable, manager.unified_enable = disable, enable
     if failure == 'the registry does not have it':
@@ -208,6 +208,7 @@ def test_clone_of_the_snapshot_is_restored_when_the_version_that_the_snapshot_na
 
     assert summary(cnr_custom_nodes={'fixture': '1.0.0'}, git_custom_nodes={REPO_URL: {'hash': COMMIT, 'disabled': True}}) == lines
     assert steps == done
+    assert [x.args for x in core.repo_switch_commit.call_args_list] == [(str(tmp_path / 'fixture'), COMMIT)]
 
 
 def test_pack_of_the_registry_with_the_name_of_the_manager_in_its_id_is_not_cloned(manager, summary, steps):  # noqa: F811
