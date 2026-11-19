@@ -3174,7 +3174,6 @@ async def restore_snapshot(snapshot_path, git_helper_extras=None):
             cloned_repos.append(name)
 
     await unified_manager.reload('cache')
-    await unified_manager.get_custom_nodes('default', 'cache')
 
     cnr_repo_map = {}
     for k, v in unified_manager.repo_cnr_map.items():
@@ -3269,6 +3268,12 @@ async def restore_snapshot(snapshot_path, git_helper_extras=None):
                 v['hash'] = v['hash'].strip()
 
             norm_k = git_utils.normalize_url(k)
+
+            # a node pack saved at a version of the registry has the clone it keeps disabled as a git entry
+            cnr = unified_manager.repo_cnr_map.get(norm_k)
+            if cnr is not None and cnr['id'] in (cnr_info or {}):
+                continue
+
             git_info[norm_k] = v
 
         if git_info is not None:
@@ -3281,7 +3286,8 @@ async def restore_snapshot(snapshot_path, git_helper_extras=None):
                 if 'comfyui-manager' in k:
                     continue
 
-                if v[0] == 'nightly' and cnr_repo_map.get(k):
+                # a clone still enabled here is one whose version of the snapshot could not be installed
+                if v[0] == 'nightly' and cnr_repo_map.get(k) and k not in (cnr_info or {}):
                     repo_url = cnr_repo_map.get(k)
                     normalized_url = git_utils.normalize_url(repo_url)
 
@@ -3345,17 +3351,21 @@ async def restore_snapshot(snapshot_path, git_helper_extras=None):
                 cnr = unified_manager.repo_cnr_map.get(normalized_url)
                 if cnr is not None:
                     pack_id = cnr['id']
-                    try:
-                        res = await unified_manager.install_by_id(pack_id, 'nightly', instant_execution=True, no_deps=False, return_postinstall=True)
-                    except Exception as e:
-                        logging.error(f"[ComfyUI-Manager] {e}")
-                        res = ManagedResult('fail').fail(str(e))
-                    if res.action == 'install-git' and res.result:
-                        finish_clone(res, pack_id, unified_manager.active_nodes[pack_id][1], git_info[x]['hash'])
-                    elif res.action == 'skip':
+                    if 'comfyui-manager' in pack_id.lower():
                         skip_node_packs.append(pack_id)
-                    elif not res.result:
+                        processed_urls.append(x)
+                        continue
+
+                    # the url of the snapshot is what is cloned: the node list may not have the node pack, or have another repository under its name
+                    try:
+                        res = unified_manager._install_git(pack_id, 'nightly', x, instant_execution=True, no_deps=False, return_postinstall=True)
+                    except Exception as e:
+                        res = ManagedResult('fail').fail(f"[ComfyUI-Manager] {e}")
+                    if res.result:
+                        finish_clone(res, pack_id, unified_manager.active_nodes[pack_id][1], git_info[x]['hash'])
+                    else:
                         failed.append(pack_id)
+                        logging.error(res.msg)
                     processed_urls.append(x)
 
             for x in processed_urls:
@@ -3444,6 +3454,7 @@ async def restore_snapshot(snapshot_path, git_helper_extras=None):
         res = unified_manager.repo_install(repo_url, to_path, instant_execution=True, no_deps=False, return_postinstall=True)
         if not res.result:
             failed.append(repo_name)
+            logging.error(res.msg)
             continue
 
         finish_clone(res, repo_name, to_path, git_info[repo_url]['hash'])
