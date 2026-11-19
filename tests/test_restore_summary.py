@@ -169,15 +169,42 @@ def test_pack_saved_at_a_version_of_the_registry_with_its_clone_disabled_is_rest
     assert steps == done
 
 
-@pytest.mark.parametrize('available, lines, done', [
-    (True, ['[ INSTALLED ] fixture@1.0.0'], ['disable fixture', 'install fixture@1.0.0']),
-    (False, ['[  FAILED   ] fixture@1.0.0'], []),
-], ids=['a version the registry has', 'a version the registry does not have'])
-def test_clone_that_is_enabled_is_left_to_the_install_of_the_version_that_the_snapshot_names(core, manager, summary, steps, monkeypatch, tmp_path, available, lines, done):  # noqa: F811
+def test_clone_that_is_enabled_is_left_to_the_install_of_the_version_that_the_snapshot_names(manager, summary, steps, tmp_path):  # noqa: F811
     manager.repo_cnr_map[REPO_URL] = manager.cnr_map['fixture'] = {'id': 'fixture', 'repository': REPO_URL, 'publisher': {'name': 'owner'}}
     manager.active_nodes['fixture'] = ('nightly', str(tmp_path / 'fixture'))
-    if not available:
+
+    assert summary(cnr_custom_nodes={'fixture': '1.0.0'}, git_custom_nodes={REPO_URL: {'hash': COMMIT, 'disabled': True}}) == ['[ INSTALLED ] fixture@1.0.0']
+    assert steps == ['disable fixture', 'install fixture@1.0.0']
+
+
+@pytest.mark.parametrize('failure, lines, done', [
+    ('the registry does not have it', [f'[  CHECKOUT ] fixture@{COMMIT}', '[  FAILED   ] fixture@1.0.0'], []),
+    ('its download fails', ['[  ENABLED  ] fixture', '[  FAILED   ] fixture@1.0.0'], ['disable fixture', 'enable fixture@nightly']),
+    ('its download fails after another version was enabled', ['[  ENABLED  ] fixture', '[  FAILED   ] fixture@1.0.0'], ['disable fixture', 'enable fixture@cnr', 'enable fixture@nightly']),
+], ids=['the registry does not have it', 'its download fails', 'its download fails after another version was enabled'])
+def test_clone_of_the_snapshot_is_restored_when_the_version_that_the_snapshot_names_cannot_be_installed(core, manager, summary, steps, monkeypatch, tmp_path, failure, lines, done):  # noqa: F811
+    manager.repo_cnr_map[REPO_URL] = manager.cnr_map['fixture'] = {'id': 'fixture', 'repository': REPO_URL, 'publisher': {'name': 'owner'}}
+    manager.active_nodes['fixture'] = ('nightly', str(tmp_path / 'fixture'))
+
+    def disable(name, is_unknown):
+        steps.append('disable ' + name)
+        manager.nightly_inactive_nodes[name] = manager.active_nodes.pop(name)[1]
+        return core.ManagedResult('disable')
+
+    def enable(name, version):
+        steps.append('enable %s@%s' % (name, version))
+        if version == 'cnr':
+            manager.active_nodes[name] = ('2.0.0', manager.cnr_inactive_nodes[name].pop('2.0.0'))
+        return core.ManagedResult('enable')
+
+    manager.unified_disable, manager.unified_enable = disable, enable
+    if failure == 'the registry does not have it':
         monkeypatch.setattr(core.cnr_utils, 'install_node', lambda name, version: None)
+    elif failure == 'its download fails':
+        manager._cnr_install = lambda name, version, *args: core.ManagedResult('install-cnr').fail('the download failed')
+    else:
+        manager.cnr_inactive_nodes['fixture'] = {'2.0.0': str(tmp_path / '.disabled/fixture@2_0_0')}
+        manager._cnr_switch_version = lambda name, version, *args: core.ManagedResult('switch-cnr').fail('the download failed')
 
     assert summary(cnr_custom_nodes={'fixture': '1.0.0'}, git_custom_nodes={REPO_URL: {'hash': COMMIT, 'disabled': True}}) == lines
     assert steps == done

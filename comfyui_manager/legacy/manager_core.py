@@ -3271,7 +3271,8 @@ async def restore_snapshot(snapshot_path, git_helper_extras=None):
 
             # a node pack saved at a version of the registry has the clone it keeps disabled as a git entry
             cnr = unified_manager.repo_cnr_map.get(norm_k)
-            if cnr is not None and cnr['id'] in (cnr_info or {}):
+            version = (cnr_info or {}).get(cnr['id']) if cnr is not None else None
+            if version is not None and unified_manager.is_enabled(cnr['id'], 'cnr') and f"{cnr['id']}@{version}" not in failed:
                 continue
 
             git_info[norm_k] = v
@@ -3286,8 +3287,7 @@ async def restore_snapshot(snapshot_path, git_helper_extras=None):
                 if 'comfyui-manager' in k:
                     continue
 
-                # a clone still enabled here is one whose version of the snapshot could not be installed
-                if v[0] == 'nightly' and cnr_repo_map.get(k) and k not in (cnr_info or {}):
+                if v[0] == 'nightly' and cnr_repo_map.get(k):
                     repo_url = cnr_repo_map.get(k)
                     normalized_url = git_utils.normalize_url(repo_url)
 

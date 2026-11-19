@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   the snapshot names. A node pack that was switched from its clone to a
   version keeps the clone, disabled, and a snapshot saves both: the restore
   enabled or cloned the clone and disabled that version. When that version
-  cannot be installed, a clone that is enabled stays enabled.
+  cannot be installed, the clone is restored as before.
 - A clone of a snapshot restore that is refused says why in the log, as
   `Invalid git url: ...`. The summary said `[  FAILED   ]` with no word of
   why.
