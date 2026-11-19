@@ -19,7 +19,7 @@ A node pack that was switched from its clone to a version of the registry
 keeps the clone, disabled, and a snapshot saves both. The restore enabled or
 cloned the clone and disabled the version that the snapshot names. Such a node
 pack is restored at that version, and its git entry is left alone. When that
-version cannot be installed, a clone that is enabled stays enabled.
+version cannot be installed, the clone is restored as before.
 
 A clone of the restore that is refused says why in the log, as
 `Invalid git url: ...`.

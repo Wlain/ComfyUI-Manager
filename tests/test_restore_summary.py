@@ -163,17 +163,39 @@ result = summary(cnr_custom_nodes=saved['cnr_custom_nodes'], git_custom_nodes=sa
 ''') == state
 
 
-@pytest.mark.parametrize('available, state', [
-    (True, ['[ INSTALLED ] fixture@1.0.0', ['disable fixture', 'install fixture@1.0.0']]),
-    (False, ['[  FAILED   ] fixture@1.0.0', []]),
-], ids=['a version the registry has', 'a version the registry does not have'])
-def test_clone_that_is_enabled_is_left_to_the_install_of_the_version_that_the_snapshot_names(available, state):
+def test_clone_that_is_enabled_is_left_to_the_install_of_the_version_that_the_snapshot_names():
+    assert lines('''
+manager.repo_cnr_map[URL] = {'id': 'fixture'}
+manager.active_nodes['fixture'] = ('nightly', str(nodes / 'fixture'))
+done = steps()
+result = summary(cnr_custom_nodes={'fixture': '1.0.0'}, git_custom_nodes={URL: {'hash': HASH, 'disabled': True}}) + [done]
+''') == ['[ INSTALLED ] fixture@1.0.0', ['disable fixture', 'install fixture@1.0.0']]
+
+
+@pytest.mark.parametrize('failure, state', [
+    ('cnr_utils.install_node = lambda name, version: None', [f'[  CHECKOUT ] fixture@{HASH}', '[  FAILED   ] fixture@1.0.0', []]),
+    ("manager._cnr_install = lambda name, version, *args: core.ManagedResult('install-cnr').fail('the download failed')",
+     ['[  ENABLED  ] fixture', '[  FAILED   ] fixture@1.0.0', ['disable fixture', 'enable fixture@nightly']]),
+    ("manager.cnr_inactive_nodes['fixture'] = {'2.0.0': str(nodes / '.disabled/fixture@2_0_0')}; "
+     "manager._cnr_switch_version = lambda name, version, *args: core.ManagedResult('switch-cnr').fail('the download failed')",
+     ['[  ENABLED  ] fixture', '[  FAILED   ] fixture@1.0.0', ['disable fixture', 'enable fixture@cnr', 'enable fixture@nightly']]),
+], ids=['the registry does not have it', 'its download fails', 'its download fails after another version was enabled'])
+def test_clone_of_the_snapshot_is_restored_when_the_version_that_the_snapshot_names_cannot_be_installed(failure, state):
     assert lines(f'''
 manager.repo_cnr_map[URL] = {{'id': 'fixture'}}
 manager.active_nodes['fixture'] = ('nightly', str(nodes / 'fixture'))
 done = steps()
-if not {available}:
-    cnr_utils.install_node = lambda name, version: None
+def disable(name, is_unknown):
+    done.append('disable ' + name)
+    manager.nightly_inactive_nodes[name] = manager.active_nodes.pop(name)[1]
+    return core.ManagedResult('disable')
+def enable(name, version):
+    done.append('enable %s@%s' % (name, version))
+    if version == 'cnr':
+        manager.active_nodes[name] = ('2.0.0', manager.cnr_inactive_nodes[name].pop('2.0.0'))
+    return core.ManagedResult('enable')
+manager.unified_disable, manager.unified_enable = disable, enable
+{failure}
 result = summary(cnr_custom_nodes={{'fixture': '1.0.0'}}, git_custom_nodes={{URL: {{'hash': HASH, 'disabled': True}}}}) + [done]
 ''') == state
 
