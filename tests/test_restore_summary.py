@@ -175,10 +175,10 @@ result = summary(cnr_custom_nodes={'fixture': '1.0.0'}, git_custom_nodes={URL: {
 @pytest.mark.parametrize('failure, state', [
     ('cnr_utils.install_node = lambda name, version: None', [f'[  CHECKOUT ] fixture@{HASH}', '[  FAILED   ] fixture@1.0.0', []]),
     ("manager._cnr_install = lambda name, version, *args: core.ManagedResult('install-cnr').fail('the download failed')",
-     ['[  ENABLED  ] fixture', '[  FAILED   ] fixture@1.0.0', ['disable fixture', 'enable fixture@nightly']]),
+     [f'[  CHECKOUT ] fixture@{HASH}', '[  FAILED   ] fixture@1.0.0', ['disable fixture', 'enable fixture@nightly']]),
     ("manager.cnr_inactive_nodes['fixture'] = {'2.0.0': str(nodes / '.disabled/fixture@2_0_0')}; "
      "manager._cnr_switch_version = lambda name, version, *args: core.ManagedResult('switch-cnr').fail('the download failed')",
-     ['[  ENABLED  ] fixture', '[  FAILED   ] fixture@1.0.0', ['disable fixture', 'enable fixture@cnr', 'enable fixture@nightly']]),
+     [f'[  CHECKOUT ] fixture@{HASH}', '[  FAILED   ] fixture@1.0.0', ['disable fixture', 'enable fixture@cnr', 'enable fixture@nightly']]),
 ], ids=['the registry does not have it', 'its download fails', 'its download fails after another version was enabled'])
 def test_clone_of_the_snapshot_is_restored_when_the_version_that_the_snapshot_names_cannot_be_installed(failure, state):
     assert lines(f'''
@@ -193,11 +193,12 @@ def enable(name, version):
     done.append('enable %s@%s' % (name, version))
     if version == 'cnr':
         manager.active_nodes[name] = ('2.0.0', manager.cnr_inactive_nodes[name].pop('2.0.0'))
-    return core.ManagedResult('enable')
+    return core.ManagedResult('enable').with_target(str(nodes / name))
 manager.unified_disable, manager.unified_enable = disable, enable
 {failure}
 result = summary(cnr_custom_nodes={{'fixture': '1.0.0'}}, git_custom_nodes={{URL: {{'hash': HASH, 'disabled': True}}}}) + [done]
-''') == state
+result += [[x.args for x in core.repo_switch_commit.call_args_list] == [(str(nodes / 'fixture'), HASH)]]
+''') == state + [True]
 
 
 def test_pack_of_the_registry_with_the_name_of_the_manager_in_its_id_is_not_cloned():
